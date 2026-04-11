@@ -36,9 +36,8 @@ except ImportError:
 
 st.set_page_config(page_title="🎯 Trading Recommendation", layout="wide")
 
-@st.cache_data(ttl=300)
+# Scanner function (NO CACHE agar selalu fresh)
 def scan_market_pairs():
-    """Scan multiple pairs dan ranking berdasarkan Setup Probability"""
     pairs_to_scan = ["EUR/USD", "GBP/USD", "USD/JPY", "USD/CHF", "AUD/USD", "USD/CAD", "NZD/USD", "EUR/GBP"]
     results = []
     
@@ -56,21 +55,13 @@ def scan_market_pairs():
             rsi = latest.get("rsi_14", 50)
             atr = latest.get("atr_14", 0.001)
             
-            # 1. Trend Alignment Score (40%)
+            # Scoring Logic
             trend_score = 80 if price > sma else 20
-            
-            # 2. RSI Momentum Score (30%) - Favor 40-60 range for fresh moves
-            if 40 <= rsi <= 60:
-                rsi_score = 75
-            elif (30 <= rsi < 40) or (60 < rsi <= 70):
-                rsi_score = 50
-            else:
-                rsi_score = 20  # Extreme = high risk
+            if 40 <= rsi <= 60: rsi_score = 75
+            elif (30 <= rsi < 40) or (60 < rsi <= 70): rsi_score = 50
+            else: rsi_score = 20
                 
-            # 3. Volatility Score (30%) - ATR normalized
-            vol_score = min(100, (atr / price) * 100000)  # ~0.5-1.5% daily move = good
-            
-            # Weighted Total
+            vol_score = min(100, (atr / price) * 100000)
             total_score = (trend_score * 0.4) + (rsi_score * 0.3) + (vol_score * 0.3)
             
             results.append({
@@ -84,45 +75,38 @@ def scan_market_pairs():
         except Exception:
             continue
             
-    # Sort by score descending
     results.sort(key=lambda x: x["Setup Score"], reverse=True)
     return results
 
 def main():
     st.title("🎯 Trading Recommendation")
     
-    # --- MARKET SCANNER SECTION ---
+    # --- MARKET SCANNER ---
     st.subheader("🔍 Market Scanner: Top Potential Pairs")
     st.caption("Sistem ranking berdasarkan Trend Alignment + RSI Momentum + Volatilitas Optimal")
     
     if st.button("🔄 Scan Market Sekarang", type="primary"):
-        st.cache_data.clear()
         st.rerun()
         
     scan_results = scan_market_pairs()
     
     if scan_results:
         top_3 = scan_results[:3]
-        
         cols = st.columns(3)
         for i, pick in enumerate(top_3):
             with cols[i]:
-                st.metric(
-                    f"#{i+1} {pick['Pair']}", 
-                    f"{pick['Setup Score']}/100",
-                    pick["Trend"]
-                )
+                st.metric(f"#{i+1} {pick['Pair']}", f"{pick['Setup Score']}/100", pick["Trend"])
                 st.caption(f"RSI: {pick['RSI']} | ATR: {pick['ATR']}")
                 
                 if st.button(f"📊 Lihat Setup {pick['Pair']}", key=f"btn_{pick['Pair']}"):
                     st.session_state.selected_pair = pick["Pair"]
                     st.rerun()
-                    
-        st.markdown("---")
     else:
-        st.warning("⚠️ Gagal scan market. Menggunakan pair default.")
+        st.warning("⚠️ Scanner gagal memuat data.")
 
-    # --- DETAILED RECOMMENDATION FOR SELECTED PAIR ---
+    st.markdown("---")
+    
+    # --- DETAILED SETUP ---
     pair = st.session_state.get("selected_pair", "EUR/USD")
     st.subheader(f"📈 Detailed Setup: {pair}")
     
@@ -131,46 +115,35 @@ def main():
     
     df = fallback_to_frankfurter(pair, days=50)
     
-    if not df.empty:
+    if not df.empty and "close" in df.columns:
         df = calculate_all_indicators(df)
         latest = df.iloc[-1]
         price = latest["close"]
         atr = latest.get("atr_14", 0.001)
         
-        # Calculate Levels
         sl_dist = atr * mult
         sl = price - sl_dist if price > df.iloc[-2]["close"] else price + sl_dist
         tp1 = price + (abs(price - sl) * 2) if sl < price else price - (abs(sl - price) * 2)
         tp2 = price + (abs(price - sl) * 3) if sl < price else price - (abs(sl - price) * 3)
         
-        # Display Levels
         c1, c2, c3, c4 = st.columns(4)
         c1.metric("Entry", f"{price:.5f}")
         c2.metric("Stop Loss", f"{sl:.5f}")
         c3.metric("TP 1", f"{tp1:.5f}")
         c4.metric("TP 2", f"{tp2:.5f}")
         
-        # Chart
         fig = go.Figure()
         fig.add_trace(go.Scatter(x=df.index, y=df["close"], name="Price", line=dict(color="white")))
         fig.add_hline(y=price, line_dash="dash", line_color="gold", annotation_text="Entry")
         fig.add_hline(y=sl, line_dash="dot", line_color="red", annotation_text="SL")
         fig.add_hline(y=tp1, line_dash="dot", line_color="green", annotation_text="TP1")
         fig.add_hline(y=tp2, line_dash="dot", line_color="lime", annotation_text="TP2")
-        fig.update_layout(
-            title=f"{pair} - Trade Setup",
-            height=350,
-            template="plotly_dark",
-            xaxis_rangeslider_visible=False
-        )
+        fig.update_layout(title=f"{pair} - Trade Setup", height=350, template="plotly_dark", xaxis_rangeslider_visible=False)
         st.plotly_chart(fig, use_container_width=True)
         
-        # Risk Calculator
         st.markdown("### 💰 Risk Calculator")
-        
         bal = st.session_state.get("account_balance", 10000)
         risk = st.session_state.get("risk_per_trade", 1.0)
-        
         pips = abs(price - sl) / 0.0001
         lots = calculate_position_size(bal, risk, pips, 10)
         
@@ -179,35 +152,19 @@ def main():
         c2.metric("Risk Amount", f"${bal * (risk / 100):,.2f}")
         c3.metric("Risk:Reward", f"1:{abs(tp1-price)/abs(price-sl):.1f}")
         
-        # Trade Plan
         st.markdown("### 📋 Trade Plan")
-        
         direction = "BUY" if sl < price else "SELL"
         rr_ratio = abs(tp1 - price) / abs(price - sl)
         
         plan_df = pd.DataFrame({
             "Parameter": ["Pair", "Direction", "Entry Price", "Stop Loss", "Take Profit 1", "Take Profit 2", "Risk:Reward"],
-            "Value": [
-                pair,
-                direction,
-                f"{price:.5f}",
-                f"{sl:.5f}",
-                f"{tp1:.5f}",
-                f"{tp2:.5f}",
-                f"1:{rr_ratio:.1f}"
-            ]
+            "Value": [pair, direction, f"{price:.5f}", f"{sl:.5f}", f"{tp1:.5f}", f"{tp2:.5f}", f"1:{rr_ratio:.1f}"]
         })
-        
         st.dataframe(plan_df, use_container_width=True, hide_index=True)
         
-        st.warning("""
-        ⚠️ **DISCLAIMER**: Rekomendasi ini simulasi edukatif. 
-        Selalu gunakan risk management ketat (max 1-2% per trade). 
-        Trading forex berisiko tinggi terhadap modal Anda.
-        """)
-    
+        st.warning("⚠️ **Disclaimer**: Simulasi edukatif. Gunakan risk management ketat. Trading forex berisiko tinggi.")
     else:
-        st.warning("⚠️ Data tidak tersedia untuk generate rekomendasi.")
+        st.error("❌ Data tidak tersedia. Cek koneksi atau refresh halaman.")
 
 if __name__ == "__main__":
     main()
