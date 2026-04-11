@@ -76,6 +76,15 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
+def _ensure_api_key():
+    with st.sidebar:
+        st.subheader("🔑 API Key")
+        key_input = st.text_input("Twelve Data API Key", type="password",
+                                  value=st.session_state.get("twelve_api_key", ""),
+                                  key="sidebar_key_home")
+        if key_input:
+            st.session_state["twelve_api_key"] = key_input
+
 def main():
     st.markdown('<p class="main-header">🏠 Dashboard Overview</p>', unsafe_allow_html=True)
 
