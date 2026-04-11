@@ -14,20 +14,13 @@ def main():
     st.title("📊 Live Forex Rates")
     st.caption("Sumber: Twelve Data API — real-time")
 
-    # Sidebar API key input
-    with st.sidebar:
-        st.subheader("🔑 API Key")
-        key_input = st.text_input("Twelve Data API Key", type="password",
-                                  value=st.session_state.get("twelve_api_key", ""))
-        if key_input:
-            st.session_state["twelve_api_key"] = key_input
-
     if st.button("🔄 Refresh"):
         st.cache_data.clear()
         st.rerun()
 
     st.markdown("---")
 
+    # Live prices
     rows = []
     for pair in PAIRS:
         price, err = get_live_rate(pair)
@@ -40,7 +33,7 @@ def main():
 
     st.markdown("---")
 
-    # Change % pakai close hari ini vs kemarin
+    # Daily change
     st.subheader("📈 Daily Change")
     change_rows = []
     for pair in PAIRS:
@@ -56,7 +49,7 @@ def main():
                 "Trend":  "🟢 Bullish" if chg > 0.05 else "🔴 Bearish" if chg < -0.05 else "⚪ Flat",
             })
         else:
-            change_rows.append({"Pair": pair, "Close": "—", "Change": "—", "Trend": "⚠️ Error"})
+            change_rows.append({"Pair": pair, "Close": "—", "Change": "—", "Trend": f"⚠️ {err}"})
 
     st.dataframe(pd.DataFrame(change_rows), use_container_width=True, hide_index=True)
     st.caption(f"🔄 Last Update: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
