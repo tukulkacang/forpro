@@ -24,7 +24,7 @@ def fetch_twelve_data(pair, interval="1day", outputsize=100):
         return None, "No API key"
 
     try:
-        symbol = pair.replace("/", "")
+        symbol = pair  # Twelve Data forex pakai format EUR/USD (dengan slash)
         url    = "https://api.twelvedata.com/time_series"
         params = {
             "symbol":     symbol,
@@ -62,7 +62,7 @@ def get_live_rate(pair):
         return None, "No API key"
 
     try:
-        symbol = pair.replace("/", "")
+        symbol = pair  # Twelve Data forex pakai format EUR/USD (dengan slash)
         r      = requests.get(
             "https://api.twelvedata.com/price",
             params={"symbol": symbol, "apikey": api_key},
