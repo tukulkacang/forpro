@@ -8,6 +8,74 @@ st.set_page_config(
     layout="wide",
     initial_sidebar_state="expanded"
 )
+# =============================================================================
+# MOBILE RESPONSIVE CSS
+# =============================================================================
+st.markdown("""
+<style>
+    /* Base mobile styles */
+    @media (max-width: 768px) {
+        /* Make columns stack vertically on mobile */
+        .stColumns > div {
+            width: 100% !important;
+            display: block !important;
+            margin-bottom: 1rem !important;
+        }
+        
+        /* Adjust metric cards */
+        div[data-testid="stMetric"] {
+            padding: 0.5rem !important;
+            margin-bottom: 0.5rem !important;
+        }
+        div[data-testid="stMetricValue"] {
+            font-size: 1.2rem !important;
+        }
+        div[data-testid="stMetricLabel"] {
+            font-size: 0.9rem !important;
+        }
+        
+        /* Make buttons full width on mobile */
+        .stButton > button {
+            width: 100% !important;
+            margin-bottom: 0.5rem !important;
+        }
+        
+        /* Adjust dataframes */
+        .stDataFrame {
+            font-size: 0.8rem !important;
+        }
+        
+        /* Hide sidebar toggle label for cleaner look */
+        button[kind="header"] {
+            font-size: 0.9rem !important;
+        }
+        
+        /* Adjust chart containers */
+        div[data-testid="stPlotlyChart"] {
+            min-height: 300px !important;
+        }
+        
+        /* Make selectboxes & inputs easier to tap */
+        .stSelectbox > div,
+        .stTextInput > div,
+        .stNumberInput > div {
+            min-height: 40px !important;
+        }
+    }
+    
+    /* General improvements */
+    .main-header {
+        font-size: clamp(1.5rem, 5vw, 2.5rem) !important;
+        text-align: center !important;
+    }
+    
+    /* Prevent horizontal scroll */
+    .stApp {
+        max-width: 100% !important;
+        overflow-x: hidden !important;
+    }
+</style>
+""", unsafe_allow_html=True)
 
 # Initialize session state
 if "selected_pair" not in st.session_state:
