@@ -6,6 +6,13 @@ import sys, os
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
+# Import Groq Library
+try:
+    from groq import Groq
+    HAS_GROQ = True
+except ImportError:
+    HAS_GROQ = False
+
 try:
     from utils.api_utils import fallback_to_frankfurter
     from utils.indicators import calculate_all_indicators
@@ -34,129 +41,92 @@ def main():
     
     pair = st.session_state.get("selected_pair", "EUR/USD")
     
-    # Fetch data
+    # Fetch Data
     df = fallback_to_frankfurter(pair, days=60)
+    
+    # Calculate Technical Scores (Simulated Logic)
+    tech_score = 50
+    rsi = 50
     
     if not df.empty and "close" in df.columns:
         df = calculate_all_indicators(df)
-        
-        # Calculate scores (simulated logic)
-        rsi = df.iloc[-1]["rsi_14"] if "rsi_14" in df.columns else 50
+        rsi = df.iloc[-1]["rsi_14"]
         price = df.iloc[-1]["close"]
-        sma = df.iloc[-1]["sma_20"] if "sma_20" in df.columns else price
+        sma = df.iloc[-1]["sma_20"]
         
-        # Technical score
-        tech_score = 50
-        if rsi < 30:
-            tech_score = 80
-        elif rsi > 70:
-            tech_score = 20
-        elif 45 <= rsi <= 55:
-            tech_score = 50
-        else:
-            tech_score = 60 if rsi < 50 else 40
-        
-        # Fundamental score (simulated)
-        fund_score = 50
-        
-        # Sentiment score (simulated)
-        sent_score = 50
-        
-        # Hybrid score
-        hybrid_score = round(tech_score * 0.5 + fund_score * 0.3 + sent_score * 0.2, 1)
-        
-        # Display metrics
-        col1, col2, col3, col4 = st.columns(4)
-        col1.metric("Technical", f"{tech_score}/100")
-        col2.metric("Fundamental", f"{fund_score}/100")
-        col3.metric("Sentiment", f"{sent_score}/100")
-        col4.metric("Hybrid", f"{hybrid_score}/100")
-        
-        # Progress bars
-        st.markdown("### 📈 Score Breakdown")
-        c1, c2, c3 = st.columns(3)
-        with c1:
-            st.markdown(f"**Technical Analysis**")
-            st.progress(tech_score / 100)
-            st.caption("Weight: 50%")
-        with c2:
-            st.markdown(f"**Fundamental Analysis**")
-            st.progress(fund_score / 100)
-            st.caption("Weight: 30%")
-        with c3:
-            st.markdown(f"**Market Sentiment**")
-            st.progress(sent_score / 100)
-            st.caption("Weight: 20%")
-        
-        st.markdown("---")
-        
-        # AI Insight
-        st.subheader("💡 AI Insight (Bahasa Indonesia)")
-        
-        if hybrid_score >= 65:
-            st.success(f"""
-            🟢 **Sinyal KUAT BUY untuk {pair}**
-            
-            **Analisis**:
-            - Technical & sentimen selaras bullish
-            - Entry di pullback ke support
-            - SL ketat di bawah recent low
-            - TP bertahap dengan R:R 1:2
-            
-            **Action**: Pertimbangkan entry dengan risk management ketat
-            """)
-        elif hybrid_score <= 35:
-            st.error(f"""
-            🔴 **Sinyal KUAT SELL untuk {pair}**
-            
-            **Analisis**:
-            - Bearish pressure dominan
-            - Hindari counter-trend trades
-            - Fokus short setup di rally
-            - TP di Fib extension
-            
-            **Action**: Consider short positions dengan SL ketat
-            """)
-        elif 50 <= hybrid_score < 65:
-            st.info(f"""
-            🟡 **Sinyal MODERATE BUY untuk {pair}**
-            
-            **Analisis**:
-            - Bias bullish tapi perlu konfirmasi tambahan
-            - Tunggu pullback lebih dalam
-            - Gunakan position size lebih kecil
-            
-            **Action**: Entry dengan position size 0.5-1%
-            """)
-        else:
-            st.warning(f"""
-            ⚪ **NEUTRAL / WAIT untuk {pair}**
-            
-            **Analisis**:
-            - Market sideways / no clear edge
-            - Low confluence
-            - Tidak ada setup high probability
-            
-            **Action**: WAIT untuk setup lebih baik
-            """)
-        
-        st.info("""
-        💡 **Hybrid Score Methodology**:
-        
-        Hybrid Score = Technical(50%) + Fundamental(30%) + Sentiment(20%)
-        
-        - **70-100**: Strong Buy/Sell signal
-        - **55-69**: Moderate Buy/Sell signal
-        - **45-54**: Neutral/Wait
-        - **30-44**: Weak Sell/Buy signal
-        - **0-29**: Strong Sell/Buy signal
-        
-        Gunakan sebagai **filter probabilitas**, bukan sinyal entry otomatis.
-        Selalu konfirmasi dengan price action dan risk management.
-        """)
+        if rsi < 30: tech_score = 80
+        elif rsi > 70: tech_score = 20
+        elif price > sma: tech_score = 60
+        else: tech_score = 40
+
+    fund_score = 50
+    sent_score = 50
+    hybrid_score = round(tech_score * 0.5 + fund_score * 0.3 + sent_score * 0.2, 1)
+
+    # Display Metrics
+    col1, col2, col3, col4 = st.columns(4)
+    col1.metric("Technical", f"{tech_score}/100")
+    col2.metric("Fundamental", f"{fund_score}/100")
+    col3.metric("Sentiment", f"{sent_score}/100")
+    col4.metric("Hybrid", f"{hybrid_score}/100")
     
+    st.markdown("### 📈 Score Breakdown")
+    c1, c2, c3 = st.columns(3)
+    with c1: st.progress(tech_score/100); st.caption("Weight: 50%")
+    with c2: st.progress(fund_score/100); st.caption("Weight: 30%")
+    with c3: st.progress(sent_score/100); st.caption("Weight: 20%")
+
+    st.markdown("---")
+    st.subheader("💡 AI Insight (Powered by Groq)")
+
+    # --- GROQ INTEGRATION ---
+    # Cek apakah Groq API Key ada di Streamlit Secrets
+    if HAS_GROQ and "GROQ_API_KEY" in st.secrets:
+        try:
+            client = Groq(api_key=st.secrets["GROQ_API_KEY"])
+            
+            # Prepare Context for AI
+            context_text = f"""
+            Pair: {pair}
+            RSI (14): {rsi:.2f}
+            Hybrid Score: {hybrid_score}
+            Technical Score: {tech_score}
+            Fundamental Score: {fund_score}
+            Sentiment Score: {sent_score}
+            """
+            
+            with st.spinner("🤖 AI sedang menganalisa data market..."):
+                completion = client.chat.completions.create(
+                    model="llama3-8b-8192",
+                    messages=[
+                        {"role": "system", "content": "You are a professional forex trading assistant. Provide concise, actionable trading insights in Indonesian based on the data provided."},
+                        {"role": "user", "content": f"Berdasarkan data teknikal berikut untuk {pair}:\n{context_text}\nBerikan analisa singkat, sinyal utama (Buy/Sell/Wait), dan saran Risk Management."}
+                    ],
+                    temperature=0.5,
+                    max_tokens=500
+                )
+                
+                insight = completion.choices[0].message.content
+                st.markdown(insight)
+                st.success("✅ Analisis berhasil dibuat oleh Groq AI.")
+
+        except Exception as e:
+            st.error(f"❌ Error Groq: {e}")
+            st.info("💡 Fallback ke insight standar.")
+            st.info(f"💡 **Sinyal: {'BUY' if hybrid_score > 50 else 'SELL'}**. Gunakan risk management ketat.")
+
+    # --- FALLBACK IF NO GROQ ---
     else:
-        st.warning("⚠️ Gagal memuat data untuk scoring.")
+        if hybrid_score >= 65:
+            st.success(f"🟢 **Sinyal KUAT BUY untuk {pair}**. Technical & sentimen selaras. Entry di pullback.")
+        elif hybrid_score <= 35:
+            st.error(f"🔴 **Sinyal KUAT SELL untuk {pair}**. Bearish pressure dominan. Fokus short setup.")
+        elif 50 <= hybrid_score < 65:
+            st.info(f"🟡 **Sinyal MODERATE BUY untuk {pair}**. Bias bullish tapi perlu konfirmasi.")
+        else:
+            st.warning(f"⚪ **NEUTRAL / WAIT untuk {pair}**. Market sideways/no clear edge.")
+        
+        st.info("💡 *Tips: Tambahkan GROQ_API_KEY di Streamlit Secrets untuk insight AI yang lebih mendalam.*")
 
 if __name__ == "__main__":
     main()
