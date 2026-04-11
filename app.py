@@ -4,20 +4,7 @@ st.set_page_config(page_title="ForPro Forex", layout="wide", initial_sidebar_sta
 
 with st.sidebar:
     st.markdown("## ⚙️ Settings")
-    st.subheader("🔑 Twelve Data API Key")
-    key_input = st.text_input(
-        "API Key",
-        type="password",
-        value=st.session_state.get("twelve_api_key", ""),
-        help="Dapatkan gratis di twelvedata.com"
-    )
-    if key_input:
-        st.session_state["twelve_api_key"] = key_input
-        st.success("✅ API Key tersimpan")
-    else:
-        st.warning("⚠️ Masukkan API Key dulu")
 
-    st.markdown("---")
     st.subheader("📊 Selected Pair")
     pairs = ["EUR/USD", "GBP/USD", "USD/JPY", "USD/CHF", "AUD/USD", "USD/CAD", "NZD/USD", "EUR/GBP"]
     selected = st.selectbox(
@@ -35,4 +22,4 @@ with st.sidebar:
     st.session_state["risk_per_trade"]  = risk
 
 st.title("🏠 ForPro Forex Dashboard")
-st.info("👈 Set API Key di sidebar, lalu pilih halaman dari menu navigasi.")
+st.info("👈 Pilih pair dan halaman dari sidebar untuk memulai.")
