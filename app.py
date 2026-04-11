@@ -23,33 +23,57 @@ if "account_balance" not in st.session_state:
 if "risk_per_trade" not in st.session_state:
     st.session_state.risk_per_trade = 1.0
 
-# Sidebar
+# =============================================================================
+# AUTO-LOAD API KEY FROM STREAMLIT SECRETS (PENTING!)
+# =============================================================================
+# Cek apakah API key ada di secrets.toml atau Streamlit Cloud Settings
+if "TWELVE_DATA_API_KEY" in st.secrets:
+    st.session_state.twelve_api_key = st.secrets["TWELVE_DATA_API_KEY"]
+    st.session_state.data_source = "Twelve Data"  # Auto-set ke Twelve Data jika key ada
+
 with st.sidebar:
     st.title("📊 Forex Analysis Pro")
     st.caption("Dashboard Analisa & Strategi Forex 2026")
     st.markdown("---")
     
-    # Data Source
+    # Data Source Selection
     st.subheader("🔌 Data Source")
+    
+    # Cek apakah API key tersedia (dari secrets atau manual)
+    has_api_key = bool(st.session_state.twelve_api_key)
+    
     source_options = ["Frankfurter (Gratis)", "Twelve Data (Advanced)"]
-    default_idx = 0 if st.session_state.data_source == "Frankfurter" else 1
+    
+    # Set default index berdasarkan availability
+    default_idx = 1 if (has_api_key and st.session_state.data_source == "Twelve Data") else 0
     
     source_selection = st.selectbox(
         "Pilih API:",
         source_options,
-        index=default_idx
+        index=default_idx,
+        disabled=not has_api_key  # Disable jika tidak ada API key
     )
     
     if "Twelve Data" in source_selection:
         st.session_state.data_source = "Twelve Data"
-        api_key = st.text_input(
-            "🔑 Twelve Data API Key",
-            value=st.session_state.twelve_api_key,
-            type="password"
-        )
-        st.session_state.twelve_api_key = api_key
-        if api_key:
-            st.success("✅ API Key tersimpan")
+        
+        # Tampilkan status API key (tanpa input field jika sudah ada di secrets)
+        if has_api_key:
+            key_preview = st.session_state.twelve_api_key[:8] + "..." + st.session_state.twelve_api_key[-4:]
+            st.success(f"✅ Twelve Data API: **{key_preview}**")
+            st.caption("🔑 API key loaded from secrets.toml")
+        else:
+            # Fallback: input manual jika tidak ada di secrets
+            st.warning("⚠️ API key tidak ditemukan di secrets")
+            api_key_input = st.text_input(
+                "🔑 Twelve Data API Key",
+                value=st.session_state.twelve_api_key,
+                type="password",
+                help="Atau tambahkan di .streamlit/secrets.toml"
+            )
+            st.session_state.twelve_api_key = api_key_input
+            if api_key_input:
+                st.info("ℹ️ API key tersimpan di session (temporary)")
     else:
         st.session_state.data_source = "Frankfurter"
         st.info("ℹ️ Menggunakan Frankfurter API (Daily Data)")
@@ -83,6 +107,13 @@ with st.sidebar:
 # Main Content
 st.markdown('<h1 style="text-align:center;">🚀 Forex Analysis Pro 2026</h1>', unsafe_allow_html=True)
 st.markdown(f"**Pair Aktif:** `{st.session_state.selected_pair}` | **Timeframe:** `{st.session_state.timeframe}`")
+
+# Show API source badge
+if st.session_state.data_source == "Twelve Data" and st.session_state.twelve_api_key:
+    st.markdown("🔌 **Data Source:** Twelve Data API (Real-time) 🔵")
+else:
+    st.markdown("🔌 **Data Source:** Frankfurter API (Daily) 🟢")
+
 st.markdown("---")
 
 # Navigation Buttons
