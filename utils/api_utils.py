@@ -68,7 +68,7 @@ def fallback_to_frankfurter(pair, days=60):
 
         if not df_real.empty and base in df_real.columns:
             out = pd.DataFrame()
-            out["close"] = df_real[base]
+            out["close"] = 1 / df_real[base]
             out["open"] = out["close"].shift(1).fillna(out["close"].iloc[0])
             out["high"] = out["close"] * 1.002
             out["low"] = out["close"] * 0.998
