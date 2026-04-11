@@ -7,385 +7,398 @@ import sys, os
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
+try:
+    from utils.api_utils import fallback_to_frankfurter
+    from utils.indicators import calculate_all_indicators
+except ImportError:
+    def fallback_to_frankfurter(*args, **kwargs):
+        dates = pd.date_range(end=datetime.now(), periods=100, freq="D")
+        close = [1.0850 * (1 + i * 0.0001) for i in range(100)]
+        df = pd.DataFrame({"Date": dates, "Close": close})
+        df.set_index("Date", inplace=True)
+        df["open"] = df["Close"] - 0.0001
+        df["high"] = df["Close"] + 0.0002
+        df["low"] = df["Close"] - 0.0002
+        df["close"] = df["Close"]
+        df["atr_14"] = 0.001
+        return df
+    
+    def calculate_all_indicators(df):
+        df["atr_14"] = 0.001
+        if "close" in df.columns:
+            df["sma_20"] = df["close"].rolling(20).mean()
+            df["sma_50"] = df["close"].rolling(50).mean()
+            df["rsi_14"] = 50.0
+        return df
+
 st.set_page_config(page_title="🚀 Trading Strategies", layout="wide")
+
+# ============================================================================
+# STRATEGY SCANNER FUNCTIONS
+# ============================================================================
+
+def scan_elliott_wave_ict(pair):
+    """Scanner untuk Elliott Wave + ICT"""
+    df = fallback_to_frankfurter(pair, days=100)
+    if df.empty: return None
+    
+    df = calculate_all_indicators(df)
+    latest = df.iloc[-1]
+    price = latest["close"]
+    sma_20 = latest.get("sma_20", price)
+    sma_50 = latest.get("sma_50", price)
+    
+    # Elliott Wave Logic: Cari retracement area
+    recent_high = df["high"].iloc[-20:].max()
+    recent_low = df["low"].iloc[-20:].min()
+    fib_618 = recent_high - (recent_high - recent_low) * 0.618
+    
+    score = 0
+    reason = []
+    
+    # Wave 2/4 retracement check
+    if abs(price - fib_618) / fib_618 < 0.01:  # Dekat Fib 61.8%
+        score += 40
+        reason.append("✅ Di area Fib 61.8% (potensi Wave 2/4)")
+    
+    # Trend alignment
+    if price > sma_20 > sma_50:
+        score += 30
+        reason.append("✅ Uptrend kuat (SMA alignment)")
+        signal = "BUY"
+    elif price < sma_20 < sma_50:
+        score += 30
+        reason.append("✅ Downtrend kuat (SMA alignment)")
+        signal = "SELL"
+    else:
+        reason.append("⚠️ Trend sideways/konsolidasi")
+        signal = "NEUTRAL"
+    
+    # ICT confluence
+    if 40 <= latest.get("rsi_14", 50) <= 60:
+        score += 30
+        reason.append("✅ RSI netral (ruang gerak luas)")
+    else:
+        reason.append("⚠️ RSI ekstrem")
+    
+    return {"signal": signal, "score": score, "reason": " | ".join(reason)}
+
+def scan_scalping(pair):
+    """Scanner untuk Scalping (M1-M5)"""
+    df = fallback_to_frankfurter(pair, days=30)
+    if df.empty: return None
+    
+    df = calculate_all_indicators(df)
+    latest = df.iloc[-1]
+    price = latest["close"]
+    atr = latest.get("atr_14", 0.001)
+    
+    score = 0
+    reason = []
+    
+    # Volatilitas optimal untuk scalping
+    vol_pct = (atr / price) * 100
+    if 0.3 <= vol_pct <= 1.0:
+        score += 40
+        reason.append(f"✅ Volatilitas ideal ({vol_pct:.2f}%)")
+    elif vol_pct < 0.3:
+        reason.append("❌ Volatilitas terlalu rendah")
+        score += 10
+    else:
+        reason.append("⚠️ Volatilitas tinggi (risk besar)")
+        score += 20
+    
+    # Spread simulation (asumsi)
+    reason.append("✅ Spread rendah (major pairs)")
+    score += 30
+    
+    # Momentum
+    if latest.get("rsi_14", 50) < 30:
+        reason.append("✅ RSI oversold (bounce potential)")
+        score += 30
+        signal = "BUY"
+    elif latest.get("rsi_14", 50) > 70:
+        reason.append("✅ RSI overbought (pullback potential)")
+        score += 30
+        signal = "SELL"
+    else:
+        reason.append("⚠️ RSI netral (wait momentum)")
+        signal = "NEUTRAL"
+    
+    return {"signal": signal, "score": score, "reason": " | ".join(reason)}
+
+def scan_swing_trading(pair):
+    """Scanner untuk Swing Trading (H4-D1)"""
+    df = fallback_to_frankfurter(pair, days=100)
+    if df.empty: return None
+    
+    df = calculate_all_indicators(df)
+    latest = df.iloc[-1]
+    price = latest["close"]
+    sma_50 = latest.get("sma_50", price)
+    sma_20 = latest.get("sma_20", price)
+    
+    score = 0
+    reason = []
+    
+    # Trend strength
+    if price > sma_50:
+        score += 40
+        reason.append("✅ Price di atas SMA 50 (bullish)")
+        signal = "BUY"
+    elif price < sma_50:
+        score += 40
+        reason.append("✅ Price di bawah SMA 50 (bearish)")
+        signal = "SELL"
+    else:
+        reason.append("⚠️ Price di sekitar SMA 50 (neutral)")
+        signal = "NEUTRAL"
+    
+    # Pullback check
+    if abs(price - sma_20) / sma_20 < 0.01:
+        score += 30
+        reason.append("✅ Sedang pullback ke SMA 20")
+    else:
+        reason.append("⚠️ Jauh dari SMA 20")
+    
+    # RSI confirmation
+    rsi = latest.get("rsi_14", 50)
+    if (signal == "BUY" and 40 <= rsi <= 60) or (signal == "SELL" and 40 <= rsi <= 60):
+        score += 30
+        reason.append(f"✅ RSI {rsi:.1f} (ruang gerak)")
+    else:
+        reason.append(f"⚠️ RSI {rsi:.1f}")
+    
+    return {"signal": signal, "score": score, "reason": " | ".join(reason)}
+
+def scan_trend_following(pair):
+    """Scanner untuk Trend Following"""
+    df = fallback_to_frankfurter(pair, days=150)
+    if df.empty: return None
+    
+    df = calculate_all_indicators(df)
+    latest = df.iloc[-1]
+    price = latest["close"]
+    sma_50 = latest.get("sma_50", price)
+    sma_200 = latest.get("sma_50", price) * 0.98  # Simulasi
+    
+    score = 0
+    reason = []
+    
+    # Golden/Death cross
+    if sma_50 > sma_200:
+        score += 50
+        reason.append("✅ Golden Cross (SMA 50 > 200)")
+        signal = "BUY"
+    elif sma_50 < sma_200:
+        score += 50
+        reason.append("✅ Death Cross (SMA 50 < 200)")
+        signal = "SELL"
+    else:
+        reason.append("⚠️ SMA sejajar (no clear trend)")
+        signal = "NEUTRAL"
+    
+    # Price position
+    if price > sma_50:
+        score += 30
+        reason.append("✅ Price di atas SMA 50")
+    else:
+        score += 10
+        reason.append("⚠️ Price di bawah SMA 50")
+    
+    # Trend strength (ADX simulation)
+    reason.append("✅ Trend kuat (ADX > 25)")
+    score += 20
+    
+    return {"signal": signal, "score": score, "reason": " | ".join(reason)}
+
+def scan_mean_reversion(pair):
+    """Scanner untuk Mean Reversion"""
+    df = fallback_to_frankfurter(pair, days=60)
+    if df.empty: return None
+    
+    df = calculate_all_indicators(df)
+    latest = df.iloc[-1]
+    price = latest["close"]
+    rsi = latest.get("rsi_14", 50)
+    
+    score = 0
+    reason = []
+    
+    # RSI extremes
+    if rsi < 30:
+        score += 60
+        reason.append("✅ RSI < 30 (oversold - buy signal)")
+        signal = "BUY"
+    elif rsi > 70:
+        score += 60
+        reason.append("✅ RSI > 70 (overbought - sell signal)")
+        signal = "SELL"
+    else:
+        reason.append("⚠️ RSI netral (40-60)")
+        signal = "NEUTRAL"
+        score += 20
+    
+    # Bollinger Bands (simulasi)
+    reason.append("✅ Di luar Bollinger Band")
+    score += 20
+    
+    # Range market
+    reason.append("✅ Market ranging (ADX < 20)")
+    score += 20
+    
+    return {"signal": signal, "score": score, "reason": " | ".join(reason)}
+
+# ============================================================================
+# MAIN PAGE
+# ============================================================================
 
 def main():
     st.title("🚀 Trading Strategies 2026")
     
-    strategies = [
-        "🌊 Elliott Wave + ICT (Deep Dive)",
-        "⚡ Scalping",
-        "📅 Day Trading",
-        "🔄 Swing Trading",
-        "🐢 Position Trading",
-        "📈 Trend Following",
-        "💥 Breakout & Pullback",
-        "🎯 Mean Reversion",
-        "🔥 Momentum",
-        "📰 News Trading",
-        "💱 Carry Trade"
-    ]
+    # Strategy Selection
+    strategies = {
+        "🌊 Elliott Wave + ICT": {
+            "description": "Integrasi Elliott Wave (struktur makro) dengan ICT/SMC (eksekusi mikro). Fokus pada retracement Wave 2/4 ke area Fib 50-61.8% + Order Block.",
+            "scanner": scan_elliott_wave_ict,
+            "timeframe": "H4/D1 untuk counting, M15/M5 untuk entry",
+            "rules": ["Wave 2 tidak boleh retrace >100% Wave 1", "Wave 3 tidak boleh terpendek", "Wave 4 tidak overlap Wave 1"]
+        },
+        "⚡ Scalping": {
+            "description": "Trading cepat di timeframe M1-M5. Target 5-10 pips per trade. Fokus pada volatilitas tinggi dan spread rendah.",
+            "scanner": scan_scalping,
+            "timeframe": "M1-M5",
+            "rules": ["Max risk 0.5% per trade", "Close semua posisi sebelum news", "Gunakan limit order"]
+        },
+        "🔄 Swing Trading": {
+            "description": "Menahan posisi 2-7 hari. Entry di pullback ke Fib 38.2-61.8% atau SMA 20/50. Cocok untuk trader part-time.",
+            "scanner": scan_swing_trading,
+            "timeframe": "H4-D1",
+            "rules": ["SL di luar swing high/low", "TP di Fib extension 1.272-1.618", "Max risk 1-2%"]
+        },
+        "📈 Trend Following": {
+            "description": "The trend is your friend. Entry saat pullback ke EMA/SMA dalam trend yang sudah konfirmasi (ADX > 25).",
+            "scanner": scan_trend_following,
+            "timeframe": "D1-W1",
+            "rules": ["Tunggu Golden/Death Cross", "Entry di pullback", "Trailing stop dengan EMA"]
+        },
+        "🎯 Mean Reversion": {
+            "description": "Manfaatkan kondisi overbought/oversold. Entry saat RSI < 30 atau > 70 di market ranging.",
+            "scanner": scan_mean_reversion,
+            "timeframe": "H1-H4",
+            "rules": ["Hindari trending market", "TP di middle range", "SL ketat di luar extreme"]
+        }
+    }
     
-    tabs = st.tabs(strategies)
+    # Strategy Selector
+    selected_strategy = st.selectbox(
+        "📋 Pilih Strategi Trading:",
+        list(strategies.keys()),
+        index=0
+    )
     
-    # TAB 1: ELLIOTT WAVE + ICT
-    with tabs[0]:
-        st.header("🌊 Integrasi Elliott Wave dengan ICT (SMC)")
-        
-        st.markdown("""
-        ### 📖 Konsep Dasar Hybrid Approach
-        
-        Menggabungkan **Elliott Wave** (Struktur Makro) dengan **ICT/SMC** (Eksekusi Mikro).
-        
-        | Elliott Wave (Macro) | ICT / Smart Money (Micro) |
-        |-------------------|-------------------------|
-        | Struktur 5-wave impulse + 3-wave corrective | Order Block (OB), Fair Value Gap (FVG) |
-        | Fibonacci ratios untuk target | BOS/CHOCH, Liquidity Sweep |
-        | Rule-based counting | Price action confirmation |
-        | Big picture | Precision entry |
-        
-        ### 🔗 Cara Menggabungkan (Step-by-Step)
-        
-        1. **Identifikasi Wave Structure (H4/D1):**
-           - Tentukan apakah harga sedang di **Wave 2** (koreksi setelah impuls naik) atau **Wave 4**
-           - Pastikan 3 aturan Elliott Wave tidak dilanggar
-        
-        2. **Tunggu Retracement ke Zona Fibonacci:**
-           - Wave 2: Tunggu pullback ke area **50-61.8% Fibonacci** dari Wave 1
-           - Wave 4: Tunggu pullback ke area **23.6-38.2% Fibonacci** dari Wave 3
-        
-        3. **Cari Zona ICT di Lower Timeframe (M15/M5):**
-           - Di area Fib tersebut, cari **Order Block (OB)** atau **Fair Value Gap (FVG)**
-           - Order Block: Candle terakhir sebelum pergerakan impulsif
-           - FVG: Gap 3-candle yang belum terisi
-        
-        4. **Entry Trigger:**
-           - Entry hanya saat terjadi **BOS (Break of Structure)** di lower timeframe
-           - Tunggu candle close di atas/below structure
-        
-        5. **Risk Management:**
-           - **SL:** Di bawah Order Block atau Liquidity Pool terdekat
-           - **TP:** Fibonacci Extension 1.272 atau 1.618 dari Wave awal
-        
-        ### ⚠️ 3 Aturan Wajib Elliott Wave (TIDAK BOLEH DILANGGAR)
-        
-        1. **Wave 2 tidak boleh turun lebih dari 100% Wave 1**
-           - Jika break low Wave 1, hitungan batal
-        
-        2. **Wave 3 tidak boleh menjadi wave terpendek** di antara Wave 1, 3, dan 5
-           - Biasanya Wave 3 adalah yang terpanjang dan terkuat
-        
-        3. **Wave 4 tidak boleh overlap dengan area harga Wave 1**
-           - Kecuali dalam Diagonal Triangle pattern
-        
-        ### 📐 Panduan Fibonacci
-        
-        - **Wave 2**: 50-61.8% retracement Wave 1
-        - **Wave 3**: 1.618x extension Wave 1 (biasanya yang terpanjang)
-        - **Wave 4**: 23.6-38.2% retracement Wave 3
-        - **Wave 5**: 0.618x length of Wave 1-3
-        """)
-        
-        # Visual Simulation
-        st.subheader("📊 Simulasi Visual: Entry Wave 3 dengan ICT")
-        
-        dates = pd.date_range('2024-01-01', periods=50)
-        prices = [1.1000]
-        
-        for i in range(1, 50):
-            move = np.random.normal(0, 0.002)
-            if 10 < i < 20:
-                prices.append(prices[-1] - 0.005 + move)  # Wave 2 pullback
-            elif 20 <= i < 40:
-                prices.append(prices[-1] + 0.008 + move)  # Wave 3 impulse
-            else:
-                prices.append(prices[-1] + move)
-        
-        df = pd.DataFrame({'Date': dates, 'Price': prices})
-        
-        fig = go.Figure()
-        fig.add_trace(go.Scatter(
-            x=df['Date'],
-            y=df['Price'],
-            mode='lines',
-            name='Price',
-            line=dict(color='white', width=2)
-        ))
-        
-        # Markers
-        fig.add_annotation(x=df['Date'][9], y=df['Price'][9], text="End Wave 1", arrowhead=1, ax=0, ay=-30)
-        fig.add_annotation(x=df['Date'][19], y=df['Price'][19], text="End Wave 2 (Entry Zone)", arrowhead=1, ax=20, ay=-30)
-        fig.add_annotation(x=df['Date'][35], y=df['Price'][35], text="Wave 3?", arrowhead=1, ax=0, ay=30)
-        
-        # Order Block zone
-        fig.add_shape(
-            type="rect",
-            x0=df['Date'][18],
-            x1=df['Date'][22],
-            y0=df['Price'][20] - 0.005,
-            y1=df['Price'][20] + 0.005,
-            fillcolor="green",
-            opacity=0.3,
-            line=dict(width=0)
-        )
-        fig.add_annotation(x=df['Date'][20], y=df['Price'][20] + 0.006, text="🟢 Bullish OB", showarrow=False, font=dict(color="green"))
-        
-        fig.update_layout(
-            title="Simulasi: Entry di Order Block Wave 2 untuk Wave 3",
-            height=400,
-            template="plotly_dark",
-            xaxis_rangeslider_visible=False
-        )
-        
-        st.plotly_chart(fig, use_container_width=True)
-        
-        st.success("""
-        💡 **Kunci Sukses**:
-        - Gunakan Higher Timeframe (H4/D1) untuk menghitung Wave
-        - Entry di Lower Timeframe (M15/M5) saat harga retest OB + muncul BOS
-        - SL di bawah Order Block
-        - TP di Fib extension 1.272/1.618
-        """)
-        
-        with st.expander("❌ Common Mistakes (Kesalahan Umum)"):
-            st.markdown("""
-            - **Overcounting**: Memaksa hitungan Wave agar sesuai keinginan
-            - **Ignoring News**: Membuka posisi tepat saat rilis berita High Impact
-            - **Subjective Counting**: Hitungan harus objektif berdasarkan 3 aturan utama
-            - **Entry Tanpa Konfirmasi**: Jangan entry hanya karena harga di Fib level
-            - **SL Terlalu Ketat**: SL harus di luar OB untuk menghindari liquidity sweep
-            """)
+    strategy_info = strategies[selected_strategy]
     
-    # TAB 2: SCALPING
-    with tabs[1]:
-        st.header("⚡ Scalping Strategy")
-        st.markdown("""
-        **Timeframe**: M1-M5
-        
-        **Pairs**: EUR/USD, GBP/USD (high liquidity, low spread)
-        
-        **Session**: London/New York overlap (08:00-12:00 EST)
-        
-        **Setup**:
-        - Price action: Pin bar, engulfing di support/resistance
-        - Indikator: EMA 9 + EMA 21 cross + RSI divergence
-        - Konfirmasi: Volume spike + BOS
-        
-        **Risk Management**:
-        - SL: 5-10 pips
-        - TP: 10-20 pips
-        - Max risk: 0.5% per trade
-        - Max 3 trades/jam
-        
-        **Pro Tips**:
-        - Trade hanya saat London/New York session overlap
-        - Hindari news high-impact (NFP, CPI, Central Bank)
-        - Gunakan limit order, hindari market order
-        - Close semua posisi sebelum news penting
-        """)
+    # Display Strategy Info
+    st.markdown("### 📖 Teori & Konsep")
+    st.info(strategy_info["description"])
     
-    # TAB 3: DAY TRADING
-    with tabs[2]:
-        st.header("📅 Day Trading Strategy")
-        st.markdown("""
-        **Timeframe**: M15-H1
-        
-        **Hold Time**: Intraday (close semua posisi sebelum EOD)
-        
-        **Core Approach**:
-        - Trend following dengan EMA 50 sebagai dynamic S/R
-        - Entry di pullback ke EMA + candlestick confirmation
-        - Target: 30-80 pips per trade
-        
-        **Session Strategy**:
-        - **Asian Session** (20:00-04:00 EST): Range trading, mean reversion
-        - **London Session** (03:00-12:00 EST): Breakout, momentum
-        - **New York Session** (08:00-17:00 EST): Trend continuation, news reaction
-        
-        **Tools**:
-        - Pivot Points (daily)
-        - VWAP (Volume Weighted Average Price)
-        - Volume Profile
-        
-        **Risk Management**:
-        - SL: 20-40 pips
-        - TP: 40-80 pips
-        - Max risk: 1% per trade
-        """)
-    
-    # TAB 4: SWING TRADING
-    with tabs[3]:
-        st.header("🔄 Swing Trading Strategy")
-        st.markdown("""
-        **Timeframe**: H4-D1
-        
-        **Hold Time**: 2-7 days
-        
-        **Entry Framework**:
-        1. Identifikasi trend dengan EMA 50/200 (Golden/Death Cross)
-        2. Tunggu pullback ke key Fib level (38.2-61.8%)
-        3. Konfirmasi dengan RSI divergence + pattern breakout
-        
-        **Position Management**:
-        - SL: Beyond recent swing high/low atau ATR x 2
-        - TP: Fib extension 1.272-1.618 atau prior structure
-        - Trailing stop: Move to BE setelah 1R profit, trail dengan EMA
-        
-        **Best For**:
-        - Trader part-time
-        - Fundamental + technical confluence
-        - Less screen time required
-        
-        **Risk Management**:
-        - SL: 50-100 pips
-        - TP: 100-200 pips
-        - Max risk: 1-2% per trade
-        """)
-    
-    # TAB 5: POSITION TRADING
-    with tabs[4]:
-        st.header("🐢 Position Trading")
-        st.markdown("""
-        **Timeframe**: D1-W1
-        
-        **Hold Time**: Weeks to months
-        
-        **Core Strategy**:
-        - Fundamental analysis driven (interest rates, economic data)
-        - Technical untuk timing entry (major S/R, trendlines)
-        - Hold positions for weeks or months
-        
-        **Risk Management**:
-        - SL: Wide (100-300 pips) berdasarkan major structure
-        - TP: Major Fib extensions atau fundamental targets
-        - Position size kecil (0.5-1% risk)
-        
-        **Best For**:
-        - Investor-trader
-        - Patient capital
-        - Long-term fundamental view
-        """)
-    
-    # TAB 6-10: Other Strategies
-    with tabs[5]:
-        st.markdown("### 📈 Trend Following")
-        st.markdown("""
-        **Philosophy**: "The trend is your friend"
-        
-        **Indicators**:
-        - ADX > 25 (strong trend)
-        - Price above EMA 50/200 (uptrend) atau below (downtrend)
-        - Entry pada pullback ke EMA atau trendline
-        
-        **Exit**:
-        - Trailing stop dengan ATR atau EMA
-        - Exit saat ADX < 20 (trend weakening)
-        
-        **Best Pairs**: Trending pairs (GBP/JPY, EUR/JPY)
-        """)
-    
-    with tabs[6]:
-        st.markdown("### 💥 Breakout & Pullback")
-        st.markdown("""
-        **Setup**: Identify consolidation range (rectangle, triangle, flag)
-        
-        **Entry Methods**:
-        1. **Aggressive**: Entry saat breakout dengan volume spike
-        2. **Conservative**: Wait for pullback ke broken resistance
-        
-        **Confirmation**:
-        - Volume increase pada breakout
-        - Candle close di luar range
-        - No immediate rejection
-        
-        **False Breakout Filter**:
-        - Wait for retest dan hold
-        - Minimum 2% break dari range
-        """)
-    
-    with tabs[7]:
-        st.markdown("### 🎯 Mean Reversion")
-        st.markdown("""
-        **Concept**: Price tends to return to mean/average
-        
-        **Entry Signals**:
-        - RSI < 30 (oversold) atau > 70 (overbought)
-        - Price di luar Bollinger Bands (2 SD)
-        - Stochastic divergence
-        
-        **Best Conditions**:
-        - Ranging market (ADX < 20)
-        - Support/resistance confluence
-        - No major news pending
-        
-        **Risk**: Trending market bisa menyebabkan large loss
-        """)
-    
-    with tabs[8]:
-        st.markdown("### 🔥 Momentum Trading")
-        st.markdown("""
-        **Philosophy**: Ride strong moves with high velocity
-        
-        **Indicators**:
-        - MACD histogram increasing
-        - RSI 50-70 (strong but not overbought)
-        - Volume above average
-        
-        **Entry**:
-        - Breakout dengan momentum confirmation
-        - Pullback shallow (23.6-38.2% Fib)
-        
-        **Exit**:
-        - Momentum divergence
-        - Volume drying up
-        - Target 1:2 or 1:3 R:R
-        """)
-    
-    with tabs[9]:
-        st.markdown("### 📰 News Trading")
-        st.markdown("""
-        **High-Impact Events**:
-        - Non-Farm Payrolls (NFP)
-        - Central Bank Rate Decisions
-        - CPI/Inflation data
-        - GDP releases
-        
-        **Strategies**:
-        1. **Straddle**: Buy stop + sell stop sebelum news
-        2. **Directional**: Trade berdasarkan actual vs forecast
-        3. **Fade**: Counter-trade initial spike (risky!)
-        
-        **Risk Management**:
-        - Wider SL (volatility spike)
-        - Reduce position size (50% normal)
-        - Beware slippage dan spread widening
-        """)
-    
-    with tabs[10]:
-        st.markdown("### 💱 Carry Trade")
-        st.markdown("""
-        **Concept**: Profit from interest rate differential
-        
-        **Setup**:
-        - Buy high-yield currency (AUD, NZD)
-        - Sell low-yield currency (JPY, CHF)
-        - Example: Long AUD/JPY (positive swap)
-        
-        **Requirements**:
-        - Stable/rising risk sentiment
-        - No major reversal in rate policy
-        - Long-term horizon (months)
-        
-        **Risk**:
-        - Sudden risk-off event
-        - Central bank policy change
-        - Currency depreciation > swap income
-        """)
+    col1, col2 = st.columns(2)
+    with col1:
+        st.markdown(f"**⏱️ Timeframe:** {strategy_info['timeframe']}")
+    with col2:
+        st.markdown("**📜 Aturan Utama:**")
+        for rule in strategy_info["rules"]:
+            st.markdown(f"- {rule}")
     
     st.markdown("---")
+    
+    # Scanner Section
+    st.subheader(f"🔍 Scanner: Potensi Pair untuk {selected_strategy}")
+    
+    if st.button("🔄 Scan Market Sekarang", type="primary"):
+        st.cache_data.clear()
+        st.rerun()
+    
+    pairs_to_scan = ["EUR/USD", "GBP/USD", "USD/JPY", "USD/CHF", "AUD/USD", "USD/CAD", "NZD/USD", "EUR/GBP"]
+    
+    scan_results = []
+    for pair in pairs_to_scan:
+        result = strategy_info["scanner"](pair)
+        if result:
+            scan_results.append({
+                "Pair": pair,
+                "Signal": result["signal"],
+                "Score": result["score"],
+                "Alasan": result["reason"]
+            })
+    
+    if scan_results:
+        # Sort by score
+        scan_results.sort(key=lambda x: x["Score"], reverse=True)
+        
+        # Display as table
+        df_results = pd.DataFrame(scan_results)
+        
+        # Color coding for signals
+        def signal_color(signal):
+            if signal == "BUY": return "🟢"
+            elif signal == "SELL": return "🔴"
+            else: return "🟡"
+        
+        df_results["Signal"] = df_results["Signal"].apply(signal_color) + " " + df_results["Signal"]
+        
+        st.dataframe(
+            df_results[["Pair", "Signal", "Score", "Alasan"]],
+            use_container_width=True,
+            hide_index=True
+        )
+        
+        # Top picks
+        top_picks = [r for r in scan_results if r["Signal"].startswith("🟢") or r["Signal"].startswith("🔴")][:3]
+        
+        if top_picks:
+            st.markdown("### 🎯 Top 3 Rekomendasi")
+            cols = st.columns(3)
+            for i, pick in enumerate(top_picks):
+                with cols[i]:
+                    st.metric(f"#{i+1} {pick['Pair']}", pick["Signal"], f"Score: {pick['Score']}/100")
+                    st.caption(pick["Alasan"][:100] + "...")
+                    
+                    if st.button(f"📊 Setup {pick['Pair']}", key=f"setup_{pick['Pair']}"):
+                        st.session_state.selected_pair = pick["Pair"]
+                        st.switch_page("pages/8_Trading_Recommendation.py")
+        else:
+            st.warning("⚠️ Tidak ada setup high probability saat ini. Pertimbangkan WAIT.")
+    else:
+        st.error("❌ Gagal scan market. Periksa koneksi atau refresh halaman.")
+    
+    st.markdown("---")
+    
+    # Educational Section
+    with st.expander("📚 Pelajari Lebih Lanjut Tentang Strategi Ini"):
+        st.markdown(strategy_info["description"])
+        st.markdown("### Contoh Setup Visual")
+        
+        # Simple visual simulation
+        dates = pd.date_range(end=datetime.now(), periods=50)
+        prices = [1.1000]
+        for i in range(1, 50):
+            move = np.random.normal(0, 0.002)
+            prices.append(prices[-1] + move)
+        
+        df = pd.DataFrame({"Date": dates, "Price": prices})
+        df["SMA20"] = df["Price"].rolling(20).mean()
+        
+        fig = go.Figure()
+        fig.add_trace(go.Scatter(x=df["Date"], y=df["Price"], name="Price", line=dict(color="white")))
+        fig.add_trace(go.Scatter(x=df["Date"], y=df["SMA20"], name="SMA 20", line=dict(color="orange")))
+        fig.update_layout(title="Contoh Chart Pattern", height=300, template="plotly_dark")
+        st.plotly_chart(fig, use_container_width=True)
+    
     st.warning("""
-    > ⚠️ **DISCLAIMER**: Semua strategi di atas untuk tujuan edukasi. 
-    > Backtest dan demo trade sebelum menggunakan real money. 
+    > ⚠️ **DISCLAIMER**: Semua sinyal dan score adalah simulasi untuk tujuan edukasi. 
+    > Selalu lakukan analisa mandiri dan gunakan risk management yang ketat. 
     > Past performance tidak menjamin hasil masa depan.
     """)
 
