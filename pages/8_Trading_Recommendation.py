@@ -110,7 +110,7 @@ def main():
     pair = st.session_state.get("selected_pair", "EUR/USD")
     st.subheader(f"📈 Detailed Setup: {pair}")
     
-    scenario = st.radio("Risk Profile", ["Conservative", "Moderate", "Aggressive"], horizontal=True)
+        scenario = st.radio("Risk Profile", ["Conservative", "Moderate", "Aggressive"], horizontal=True)
     mult = {"Conservative": 2.5, "Moderate": 1.5, "Aggressive": 1.0}[scenario]
     
     df = fallback_to_frankfurter(pair, days=50)
@@ -120,11 +120,27 @@ def main():
         latest = df.iloc[-1]
         price = latest["close"]
         atr = latest.get("atr_14", 0.001)
+        sma = latest.get("sma_20", price)
         
+        # TENTUKAN ARAH TRADE BERDASARKAN SMA (SAMA DENGAN SCANNER)
+        direction = "BUY" if price > sma else "SELL"
+        
+        # Hitung SL & TP sesuai arah
         sl_dist = atr * mult
-        sl = price - sl_dist if price > df.iloc[-2]["close"] else price + sl_dist
-        tp1 = price + (abs(price - sl) * 2) if sl < price else price - (abs(sl - price) * 2)
-        tp2 = price + (abs(price - sl) * 3) if sl < price else price - (abs(sl - price) * 3)
+        
+        if direction == "BUY":
+            sl = price - sl_dist
+            tp1 = price + (sl_dist * 2)
+            tp2 = price + (sl_dist * 3)
+        else:  # SELL
+            sl = price + sl_dist
+            tp1 = price - (sl_dist * 2)
+            tp2 = price - (sl_dist * 3)
+        
+        # Display Direction Badge
+        trend_icon = "🟢" if direction == "BUY" else "🔴"
+        st.markdown(f"### {trend_icon} Signal: **{direction} {pair}**")
+        st.caption(f"Berdasarkan: Harga {'di atas' if direction == 'BUY' else 'di bawah'} SMA 20")
         
         c1, c2, c3, c4 = st.columns(4)
         c1.metric("Entry", f"{price:.5f}")
@@ -132,13 +148,17 @@ def main():
         c3.metric("TP 1", f"{tp1:.5f}")
         c4.metric("TP 2", f"{tp2:.5f}")
         
+        # Chart dengan warna sesuai arah
         fig = go.Figure()
         fig.add_trace(go.Scatter(x=df.index, y=df["close"], name="Price", line=dict(color="white")))
+        
+        line_color = "green" if direction == "BUY" else "red"
         fig.add_hline(y=price, line_dash="dash", line_color="gold", annotation_text="Entry")
-        fig.add_hline(y=sl, line_dash="dot", line_color="red", annotation_text="SL")
-        fig.add_hline(y=tp1, line_dash="dot", line_color="green", annotation_text="TP1")
-        fig.add_hline(y=tp2, line_dash="dot", line_color="lime", annotation_text="TP2")
-        fig.update_layout(title=f"{pair} - Trade Setup", height=350, template="plotly_dark", xaxis_rangeslider_visible=False)
+        fig.add_hline(y=sl, line_dash="dot", line_color=line_color, annotation_text=f"SL ({direction})")
+        fig.add_hline(y=tp1, line_dash="dot", line_color="lime" if direction == "BUY" else "orange", annotation_text="TP1")
+        fig.add_hline(y=tp2, line_dash="dot", line_color="lime" if direction == "BUY" else "orange", annotation_text="TP2")
+        
+        fig.update_layout(title=f"{pair} - {direction} Setup", height=350, template="plotly_dark", xaxis_rangeslider_visible=False)
         st.plotly_chart(fig, use_container_width=True)
         
         st.markdown("### 💰 Risk Calculator")
@@ -150,11 +170,10 @@ def main():
         c1, c2, c3 = st.columns(3)
         c1.metric("Position Size", f"{lots:.2f} lots")
         c2.metric("Risk Amount", f"${bal * (risk / 100):,.2f}")
-        c3.metric("Risk:Reward", f"1:{abs(tp1-price)/abs(price-sl):.1f}")
+        c3.metric("Risk:Reward", f"1:2.0 (TP1) | 1:3.0 (TP2)")
         
         st.markdown("### 📋 Trade Plan")
-        direction = "BUY" if sl < price else "SELL"
-        rr_ratio = abs(tp1 - price) / abs(price - sl)
+        rr_ratio = 2.0  # Fixed untuk TP1
         
         plan_df = pd.DataFrame({
             "Parameter": ["Pair", "Direction", "Entry Price", "Stop Loss", "Take Profit 1", "Take Profit 2", "Risk:Reward"],
@@ -162,6 +181,11 @@ def main():
         })
         st.dataframe(plan_df, use_container_width=True, hide_index=True)
         
+        if direction == "BUY":
+            st.success(f"✅ **Setup BUY {pair}** - Entry di {price:.5f}, SL di {sl:.5f}, TP1 di {tp1:.5f}")
+        else:
+            st.error(f"❌ **Setup SELL {pair}** - Entry di {price:.5f}, SL di {sl:.5f}, TP1 di {tp1:.5f}")
+            
         st.warning("⚠️ **Disclaimer**: Simulasi edukatif. Gunakan risk management ketat. Trading forex berisiko tinggi.")
     else:
         st.error("❌ Data tidak tersedia. Cek koneksi atau refresh halaman.")
