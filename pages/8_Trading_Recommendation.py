@@ -36,7 +36,6 @@ except ImportError:
 
 st.set_page_config(page_title="🎯 Trading Recommendation", layout="wide")
 
-# Scanner function (NO CACHE agar selalu fresh)
 def scan_market_pairs():
     pairs_to_scan = ["EUR/USD", "GBP/USD", "USD/JPY", "USD/CHF", "AUD/USD", "USD/CAD", "NZD/USD", "EUR/GBP"]
     results = []
@@ -55,11 +54,14 @@ def scan_market_pairs():
             rsi = latest.get("rsi_14", 50)
             atr = latest.get("atr_14", 0.001)
             
-            # Scoring Logic
             trend_score = 80 if price > sma else 20
-            if 40 <= rsi <= 60: rsi_score = 75
-            elif (30 <= rsi < 40) or (60 < rsi <= 70): rsi_score = 50
-            else: rsi_score = 20
+            
+            if 40 <= rsi <= 60:
+                rsi_score = 75
+            elif (30 <= rsi < 40) or (60 < rsi <= 70):
+                rsi_score = 50
+            else:
+                rsi_score = 20
                 
             vol_score = min(100, (atr / price) * 100000)
             total_score = (trend_score * 0.4) + (rsi_score * 0.3) + (vol_score * 0.3)
@@ -81,7 +83,6 @@ def scan_market_pairs():
 def main():
     st.title("🎯 Trading Recommendation")
     
-    # --- MARKET SCANNER ---
     st.subheader("🔍 Market Scanner: Top Potential Pairs")
     st.caption("Sistem ranking berdasarkan Trend Alignment + RSI Momentum + Volatilitas Optimal")
     
@@ -106,11 +107,10 @@ def main():
 
     st.markdown("---")
     
-    # --- DETAILED SETUP ---
     pair = st.session_state.get("selected_pair", "EUR/USD")
     st.subheader(f"📈 Detailed Setup: {pair}")
     
-        scenario = st.radio("Risk Profile", ["Conservative", "Moderate", "Aggressive"], horizontal=True)
+    scenario = st.radio("Risk Profile", ["Conservative", "Moderate", "Aggressive"], horizontal=True)
     mult = {"Conservative": 2.5, "Moderate": 1.5, "Aggressive": 1.0}[scenario]
     
     df = fallback_to_frankfurter(pair, days=50)
@@ -122,22 +122,19 @@ def main():
         atr = latest.get("atr_14", 0.001)
         sma = latest.get("sma_20", price)
         
-        # TENTUKAN ARAH TRADE BERDASARKAN SMA (SAMA DENGAN SCANNER)
         direction = "BUY" if price > sma else "SELL"
         
-        # Hitung SL & TP sesuai arah
         sl_dist = atr * mult
         
         if direction == "BUY":
             sl = price - sl_dist
             tp1 = price + (sl_dist * 2)
             tp2 = price + (sl_dist * 3)
-        else:  # SELL
+        else:
             sl = price + sl_dist
             tp1 = price - (sl_dist * 2)
             tp2 = price - (sl_dist * 3)
         
-        # Display Direction Badge
         trend_icon = "🟢" if direction == "BUY" else "🔴"
         st.markdown(f"### {trend_icon} Signal: **{direction} {pair}**")
         st.caption(f"Berdasarkan: Harga {'di atas' if direction == 'BUY' else 'di bawah'} SMA 20")
@@ -148,7 +145,6 @@ def main():
         c3.metric("TP 1", f"{tp1:.5f}")
         c4.metric("TP 2", f"{tp2:.5f}")
         
-        # Chart dengan warna sesuai arah
         fig = go.Figure()
         fig.add_trace(go.Scatter(x=df.index, y=df["close"], name="Price", line=dict(color="white")))
         
@@ -173,7 +169,7 @@ def main():
         c3.metric("Risk:Reward", f"1:2.0 (TP1) | 1:3.0 (TP2)")
         
         st.markdown("### 📋 Trade Plan")
-        rr_ratio = 2.0  # Fixed untuk TP1
+        rr_ratio = 2.0
         
         plan_df = pd.DataFrame({
             "Parameter": ["Pair", "Direction", "Entry Price", "Stop Loss", "Take Profit 1", "Take Profit 2", "Risk:Reward"],
